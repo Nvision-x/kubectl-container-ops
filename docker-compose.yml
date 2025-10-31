@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  kubectl-ops:
+    build:
+      context: .
+      args:
+        KUBECTL_VERSION: v1.34.1
+    image: kubectl-ops:latest
+    container_name: kubectl-ops-dev
+    volumes:
+      # Mount your kubeconfig (adjust path as needed)
+      - ~/.kube/config:/.kube/config:ro
+      # Mount current directory for development
+      - .:/workspace:ro
+    working_dir: /workspace
+    environment:
+      # Add any environment variables you need
+      - KUBE_NAMESPACE=default
+    # Override default command for development
+    command: ["bash"]
+    stdin_open: true
+    tty: true
+
+  # Example: kubectl with environment variables instead of mounted config
+  kubectl-ops-env:
+    image: kubectl-ops:latest
+    container_name: kubectl-ops-env
+    environment:
+      - KUBE_SERVER=https://your-cluster-api.example.com
+      - KUBE_TOKEN=your-token-here
+      - KUBE_NAMESPACE=production
+    command: ["get", "nodes"]
+    profiles:
+      - env-config
+
+  # Example: Run a specific kubectl command
+  kubectl-task:
+    image: kubectl-ops:latest
+    container_name: kubectl-task
+    volumes:
+      - ~/.kube/config:/.kube/config:ro
+    command: ["get", "pods", "--all-namespaces"]
+    profiles:
+      - task

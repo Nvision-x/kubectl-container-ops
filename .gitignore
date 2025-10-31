@@ -1,0 +1,38 @@
+# Logs
+*.log
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+dist/
+build/
+
+# Local configuration
+.env
+.env.local
+
+# Test results
+test-results/
+coverage/
+
+# kubectl cache
+.kube/cache/
+
+# Container testing
+docker-compose.override.yml
