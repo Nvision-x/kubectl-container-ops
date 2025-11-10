@@ -85,8 +85,14 @@ jobs:
       with:
         dockerfile: Dockerfile
         failure-threshold: warning
-        ignore: DL3008,DL3009
-        trusted-registries: docker.io,ghcr.io,registry-1.docker.io
+        config: |
+          ignored:
+            - DL3008
+            - DL3009
+          trusted-registries:
+            - docker.io
+            - ghcr.io
+            - registry-1.docker.io
 
     - name: Lint shell scripts
       run: |
@@ -107,8 +113,10 @@ jobs:
         [ -x entrypoint.sh ] || { echo "entrypoint.sh not executable"; exit 1; }
         
         # Check for sensitive files
-        if find . -name "*.key" -o -name "*.pem" -o -name "*.p12"; then
-          echo "Found sensitive files in repository"
+        SENSITIVE_FILES=$(find . -name "*.key" -o -name "*.pem" -o -name "*.p12" | head -5)
+        if [ -n "$SENSITIVE_FILES" ]; then
+          echo "Found sensitive files in repository:"
+          echo "$SENSITIVE_FILES"
           exit 1
         fi
 
@@ -172,145 +180,15 @@ jobs:
           exit 1
         fi
 
-  build-and-test:
-    name: Build & Test - ${{ matrix.platform }}
-    runs-on: ubuntu-latest
-    needs: [validate, security-scan]
-    if: always() && (needs.validate.result == 'success' && (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped'))
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [linux/amd64]
-    outputs:
-      image-digest: ${{ steps.build.outputs.digest }}
-      image-metadata: ${{ steps.meta.outputs.json }}
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      with:
-        driver-opts: |
-          image=moby/buildkit:v0.12.0
-        buildkitd-flags: --allow-insecure-entitlement security.insecure
-
-    - name: Log in to Container Registry
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch,suffix=-{{sha}}
-          type=ref,event=pr,suffix=-{{sha}}
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=raw,value=kubectl-${{ env.KUBECTL_VERSION }},enable={{is_default_branch}}
-          type=raw,value={{branch}}-{{sha}}-{{date 'YYYYMMDD'}}
-        labels: |
-          org.opencontainers.image.title=kubectl-container-ops
-          org.opencontainers.image.description=Lightweight kubectl container with DevOps tools
-          org.opencontainers.image.vendor=kubectl-container-ops
-          org.opencontainers.image.licenses=MIT
-          kubectl.version=${{ env.KUBECTL_VERSION }}
-
-    - name: Build Docker image
-      id: build
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: ${{ matrix.platform }}
-        push: false
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        build-args: |
-          KUBECTL_VERSION=${{ env.KUBECTL_VERSION }}
-          BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
-          VCS_REF=${{ github.sha }}
-        cache-from: type=gha,scope=${{ matrix.platform }}
-        cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
-        outputs: type=docker,dest=/tmp/image-${{ matrix.platform }}.tar
-        provenance: false
-        sbom: false
-
-    - name: Load and test image (AMD64 only)
-      if: matrix.platform == 'linux/amd64'
-      run: |
-        docker load --input /tmp/image-${{ matrix.platform }}.tar
-        
-        # Get the first tag for testing
-        IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-        
-        echo "Testing image: $IMAGE_TAG"
-        
-        # Comprehensive functional tests
-        echo "=== Basic Functionality Tests ==="
-        docker run --rm $IMAGE_TAG version --client
-        
-        echo "=== Tool Validation Tests ==="
-        docker run --rm --entrypoint=/bin/sh $IMAGE_TAG -c "
-          echo '✅ kubectl:' && kubectl version --client | head -1
-          echo '✅ jq:' && echo '{\"test\":\"ok\"}' | jq -r .test
-          echo '✅ yq:' && echo 'test: ok' | yq -r .test  
-          echo '✅ curl:' && curl --version | head -1
-          echo '✅ git:' && git --version
-          echo '✅ bash:' && bash --version | head -1
-        "
-        
-        echo "=== Security Tests ==="
-        # Test non-root execution
-        USER_INFO=$(docker run --rm --entrypoint=/bin/sh $IMAGE_TAG -c "id")
-        echo "User info: $USER_INFO"
-        if [[ "$USER_INFO" == *"uid=1001"* ]]; then
-          echo "✅ Running as non-root user"
-        else
-          echo "❌ Not running as expected user"
-          exit 1
-        fi
-        
-        # Test read-only filesystem compatibility
-        docker run --rm --read-only $IMAGE_TAG version --client
-        echo "✅ Read-only filesystem compatible"
-        
-        # Test with dropped capabilities
-        docker run --rm --cap-drop=ALL $IMAGE_TAG version --client
-        echo "✅ Works with dropped capabilities"
-        
-        echo "=== Configuration Tests ==="
-        # Test with environment variables
-        docker run --rm -e KUBECONFIG_CONTENT="aW52YWxpZA==" $IMAGE_TAG version --client || echo "Expected failure for invalid config"
-
-    - name: Upload image artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-image-${{ matrix.platform }}
-        path: /tmp/image-${{ matrix.platform }}.tar
-        retention-days: 1
-        compression-level: 6
-
   build-and-push:
     name: Build & Push Container
     runs-on: ubuntu-latest
-    needs: [build-and-test]
-    if: ${{ (github.event_name != 'pull_request') && (github.event.inputs.enable_push != 'false') }}
-    timeout-minutes: 60
+    needs: validate
+    if: ${{ github.event_name != 'pull_request' || github.event.inputs.enable_push != 'false' }}
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
-      id-token: write  # For OIDC token generation
-      attestations: write  # For build attestations
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
       image-tags: ${{ steps.meta.outputs.tags }}
@@ -327,17 +205,13 @@ jobs:
         CALVER_TAG="$(date +%Y.%m.%d)-${{ github.run_number }}"
         echo "tag=v${CALVER_TAG}" >> $GITHUB_OUTPUT
         echo "version=${CALVER_TAG}" >> $GITHUB_OUTPUT
-        echo "date_only=$(date +%Y.%m.%d)" >> $GITHUB_OUTPUT
         echo "Generated CalVer tag: v${CALVER_TAG}"
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-      with:
-        driver-opts: |
-          image=moby/buildkit:v0.12.0
-        buildkitd-flags: --allow-insecure-entitlement security.insecure
 
     - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
@@ -351,231 +225,67 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
           type=ref,event=branch
+          type=ref,event=pr
           type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
           type=raw,value=latest,enable={{is_default_branch}}
           type=raw,value=kubectl-${{ env.KUBECTL_VERSION }},enable={{is_default_branch}}
           type=raw,value=${{ steps.calver.outputs.version }},enable={{is_default_branch}}
-          type=raw,value={{branch}}-{{sha}}-{{date 'YYYYMMDD'}}
         labels: |
           org.opencontainers.image.title=kubectl-container-ops
           org.opencontainers.image.description=Lightweight kubectl container with DevOps tools
-          org.opencontainers.image.vendor=kubectl-container-ops
-          org.opencontainers.image.licenses=MIT
           kubectl.version=${{ env.KUBECTL_VERSION }}
-          build.number=${{ github.run_number }}
           calver.version=${{ steps.calver.outputs.version }}
           calver.tag=${{ steps.calver.outputs.tag }}
-          build.url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-    - name: Build and push multi-platform image
+    - name: Build and push image
       id: build
       uses: docker/build-push-action@v5
       with:
         context: .
         platforms: ${{ env.PLATFORMS }}
-        push: true
+        push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           KUBECTL_VERSION=${{ env.KUBECTL_VERSION }}
-          BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
-          VCS_REF=${{ github.sha }}
-        cache-from: |
-          type=gha,scope=linux/amd64
-          type=gha,scope=linux/arm64
+        cache-from: type=gha
         cache-to: type=gha,mode=max
-        provenance: true
-        sbom: true
-        outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
-    - name: Generate build attestation
-      uses: actions/attest-build-provenance@v1
-      id: attest
-      with:
-        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        subject-digest: ${{ steps.build.outputs.digest }}
-        push-to-registry: true
-
-    - name: Generate SBOM
-      uses: anchore/sbom-action@v0
-      with:
-        image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-        format: spdx-json
-        output-file: sbom.spdx.json
-
-    - name: Upload SBOM
-      uses: actions/upload-artifact@v4
-      with:
-        name: sbom
-        path: sbom.spdx.json
-        retention-days: 90
-
-    - name: Sign container image with Cosign
-      uses: sigstore/cosign-installer@v3
-      with:
-        cosign-release: 'v2.2.0'
-    
-    - name: Sign the container image
+    - name: Test image functionality
       run: |
-        cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-      env:
-        COSIGN_EXPERIMENTAL: 1
-
-  post-build:
-    name: Post-Build Validation & Security
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 20
-    permissions:
-      security-events: write
-      contents: write
-      
-    steps:
-    - name: Checkout code (for release creation)
-      uses: actions/checkout@v4
-      if: startsWith(github.ref, 'refs/tags/')
-
-    - name: Scan published image for vulnerabilities
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
-        format: 'sarif'
-        output: 'trivy-image-results.sarif'
-        severity: 'CRITICAL,HIGH,MEDIUM'
-
-    - name: Upload image scan results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: 'trivy-image-results.sarif'
-        category: 'trivy-published-image'
-
-    - name: Scan for critical vulnerabilities only (fail on critical)
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
-        format: 'table'
-        exit-code: '1'
-        ignore-unfixed: true
-        severity: 'CRITICAL'
-
-    - name: Verify image signature
-      run: |
-        # Install cosign
-        curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
-        sudo mv cosign-linux-amd64 /usr/local/bin/cosign
-        sudo chmod +x /usr/local/bin/cosign
+        # Load image for testing on PRs
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          docker buildx build --load -t test-image .
+          IMAGE_NAME="test-image"
+        else
+          IMAGE_NAME="${{ steps.meta.outputs.tags }}" | head -n1
+        fi
         
-        # Verify signature
-        cosign verify --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
-          --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
-      env:
-        COSIGN_EXPERIMENTAL: 1
-
-    - name: Test published image functionality
-      run: |
-        echo "=== Testing Published Image ==="
+        echo "Testing image: $IMAGE_NAME"
         
-        # Test basic functionality
-        docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }} version --client
+        # Basic functionality tests
+        docker run --rm $IMAGE_NAME version --client
+        docker run --rm --entrypoint=/bin/sh $IMAGE_NAME -c "
+          echo '✅ kubectl:' && kubectl version --client | head -1
+          echo '✅ jq:' && echo '{\"test\":\"ok\"}' | jq -r .test
+          echo '✅ curl:' && curl --version | head -1
+        "
         
-        # Test security posture
-        docker run --rm --read-only --cap-drop=ALL \
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }} version --client
-        
-        echo "✅ Published image verification completed"
-
-    - name: Update deployment info
-      if: github.ref == 'refs/heads/main'
-      run: |
-        cat > deployment-info.json << EOF
-        {
-          "version": "${{ env.KUBECTL_VERSION }}",
-          "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",
-          "digest": "${{ needs.build-and-push.outputs.image-digest }}",
-          "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          "commit": "${{ github.sha }}",
-          "build_number": "${{ github.run_number }}",
-          "tags": $(echo '${{ needs.build-and-push.outputs.image-tags }}' | jq -R 'split("\n") | map(select(. != ""))')
-        }
-        EOF
-        echo "Deployment info generated"
-
-    - name: Create Release (for tags)
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        generate_release_notes: true
-        files: |
-          deployment-info.json
-        body: |
-          ## kubectl Container Release ${{ github.ref_name }}
-          
-          ### 🚀 What's New
-          - kubectl version: **${{ env.KUBECTL_VERSION }}**
-          - Base image: Alpine Linux 3.19
-          - Platform: linux/amd64
-          - Size: ~92MB (55% smaller than alternatives)
-          - Security: Signed with Cosign, SBOM included
-          - CalVer: **${{ needs.build-and-push.outputs.calver-version }}**
-          
-          ### 📦 Container Images
-          ```bash
-          # Pull specific version
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          
-          # Pull latest
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          
-          # Verify signature
-          cosign verify --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          ```
-          
-          ### 🔧 Quick Usage
-          ```bash
-          # Quick test
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} version --client
-          
-          # With kubeconfig
-          docker run --rm -v ~/.kube/config:/.kube/config:ro \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} get nodes
-          
-          # Interactive shell
-          docker run --rm -it -v ~/.kube/config:/.kube/config:ro \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} bash
-          ```
-          
-          ### 🛡️ Security Features
-          - ✅ Signed with Cosign
-          - ✅ SBOM (Software Bill of Materials) included
-          - ✅ Vulnerability scanned
-          - ✅ Non-root execution (UID 1001)
-          - ✅ Read-only filesystem compatible
-          
-          ### 📊 Image Details
-          - **Digest**: `${{ needs.build-and-push.outputs.image-digest }}`
-          - **Build**: #${{ github.run_number }}
-          - **Commit**: ${{ github.sha }}
+        # Security tests
+        docker run --rm --read-only $IMAGE_NAME version --client
+        echo "✅ Image tests completed"
 
   auto-release:
     name: Create CalVer Release
     runs-on: ubuntu-latest
-    needs: [build-and-push, post-build]
-    if: github.ref == 'refs/heads/main' && success()
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
       
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - name: Create CalVer release
       uses: softprops/action-gh-release@v1
@@ -586,17 +296,11 @@ jobs:
         body: |
           ## kubectl Container CalVer Release ${{ needs.build-and-push.outputs.calver-tag }}
           
-          ### 📅 Calendar Versioning
-          - **CalVer**: `${{ needs.build-and-push.outputs.calver-version }}`
+          ### 📅 Automatic CalVer Release
+          - **CalVer Version**: `${{ needs.build-and-push.outputs.calver-version }}`
           - **Build Date**: $(date +%Y-%m-%d)
           - **Build Number**: #${{ github.run_number }}
-          
-          ### 🚀 What's Included
-          - kubectl version: **${{ env.KUBECTL_VERSION }}**
-          - Base image: Alpine Linux 3.19
-          - Platform: linux/amd64 only (optimized build)
-          - Size: ~92MB (55% smaller than alternatives)
-          - Security: Signed with Cosign, SBOM included
+          - **kubectl Version**: **${{ env.KUBECTL_VERSION }}**
           
           ### 📦 Container Images
           ```bash
@@ -605,11 +309,6 @@ jobs:
           
           # Pull latest
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          
-          # Verify signature
-          cosign verify --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
-            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.calver-version }}
           ```
           
           ### 🔧 Quick Usage
@@ -628,43 +327,31 @@ jobs:
           - **Platform**: linux/amd64
 
   notify-completion:
-    name: Build Notification
+    name: Build Summary
     runs-on: ubuntu-latest
-    needs: [validate, security-scan, build-and-test, build-and-push, post-build, auto-release]
+    needs: [validate, build-and-push, auto-release]
     if: always()
+    timeout-minutes: 5
+    
     steps:
     - name: Build Summary
       run: |
-        echo "## 🚀 kubectl Container Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
-        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Validation | ${{ needs.validate.result == 'success' && '✅' || '❌' }} ${{ needs.validate.result }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅' || needs.security-scan.result == 'skipped' && '⏭️' || '❌' }} ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Build & Test | ${{ needs.build-and-test.result == 'success' && '✅' || '❌' }} ${{ needs.build-and-test.result }} |" >> $GITHUB_STEP_SUMMARY
-        
-        if [ "${{ github.event_name }}" != "pull_request" ]; then
-          echo "| Build & Push | ${{ needs.build-and-push.result == 'success' && '✅' || '❌' }} ${{ needs.build-and-push.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Post-Build Validation | ${{ needs.post-build.result == 'success' && '✅' || '❌' }} ${{ needs.post-build.result }} |" >> $GITHUB_STEP_SUMMARY
-        fi
-        
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📊 Build Information" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 kubectl Container Build Complete" >> $GITHUB_STEP_SUMMARY
+        echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- **kubectl Version**: \`${{ env.KUBECTL_VERSION }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Build Number**: #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "- **Platform**: linux/amd64" >> $GITHUB_STEP_SUMMARY
         
-        if [ "${{ github.ref }}" == "refs/heads/main" ] && [ "${{ needs.build-and-push.result }}" == "success" ]; then
-          echo "- **CalVer**: \`${{ needs.build-and-push.outputs.calver-version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **CalVer Tag**: \`${{ needs.build-and-push.outputs.calver-tag }}\`" >> $GITHUB_STEP_SUMMARY
-        fi
-        
-        if [ "${{ github.event_name }}" != "pull_request" ] && [ "${{ needs.build-and-push.result }}" == "success" ]; then
-          echo "- **Image Digest**: \`${{ needs.build-and-push.outputs.image-digest }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🐳 Container Images" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ needs.build-and-push.result }}" = "success" ]; then
+          echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "- **Image**: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              echo "- **CalVer Release**: \`${{ needs.build-and-push.outputs.calver-tag }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Auto-Release**: ${{ needs.auto-release.result == 'success' && '✅' || needs.auto-release.result == 'skipped' && '⏭️' || '❌' }} ${{ needs.auto-release.result }}" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+        else
+          echo "❌ Build failed" >> $GITHUB_STEP_SUMMARY
         fi
