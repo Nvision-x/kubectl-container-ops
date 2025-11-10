@@ -64,6 +64,7 @@ jobs:
       uses: dorny/paths-filter@v2
       id: changes
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
         filters: |
           dockerfile:
             - 'Dockerfile*'
@@ -73,6 +74,7 @@ jobs:
           makefile:
             - 'Makefile'
           workflows:
+            - '.github/workflows/**'
             - '.github/workflows/**'
 
     - name: Lint Dockerfile
