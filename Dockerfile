@@ -2,6 +2,9 @@
 # Multi-stage build for kubectl container
 FROM alpine:3.19 AS kubectl-installer
 
+# Set shell options for better error handling
+SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+
 # Build arguments with defaults and descriptions
 ARG KUBECTL_VERSION=v1.34.1
 ARG TARGETPLATFORM
@@ -12,8 +15,8 @@ LABEL stage=installer
 
 # Install dependencies for downloading kubectl (minimal set)
 RUN apk add --no-cache --virtual .download-deps \
-    curl=~8 \
-    ca-certificates
+    curl=8.11.0-r0 \
+    ca-certificates=20241010-r0
 
 # Download and verify kubectl binary
 RUN set -eux; \
@@ -37,6 +40,9 @@ RUN set -eux; \
 # Final stage - minimal runtime image
 FROM alpine:3.19
 
+# Set shell options for better error handling
+SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+
 # Build arguments (must be redeclared after FROM)
 ARG KUBECTL_VERSION=v1.34.1
 ARG BUILD_DATE
@@ -56,11 +62,11 @@ LABEL org.opencontainers.image.title="kubectl" \
 
 # Install runtime dependencies with specific versions for reproducibility
 RUN apk add --no-cache \
-    bash=~5.2 \
-    curl=~8 \
-    git=~2.43 \
-    jq=~1.7 \
-    ca-certificates \
+    bash=5.2.32-r0 \
+    curl=8.11.0-r0 \
+    git=2.43.5-r0 \
+    jq=1.7.1-r0 \
+    ca-certificates=20241010-r0 \
     # Security: Remove package manager cache and temporary files
     && rm -rf /var/cache/apk/* \
     && rm -rf /tmp/*
@@ -120,7 +126,7 @@ ENV PATH="/opt/kubectl/bin:/opt/common/bin:$PATH" \
     APP_NAME="kubectl"
 
 # Security: Remove unnecessary setuid/setgid binaries
-RUN find / -type f -perm +6000 -exec ls -ld {} \; 2>/dev/null | grep -v '/proc' || true
+RUN find / -type f -perm +6000 -not -path '/proc/*' -exec ls -ld {} + 2>/dev/null || true
 
 # Security: Remove shell history and temporary files
 RUN rm -rf /tmp/* /var/tmp/* /root/.bash_history 2>/dev/null || true
