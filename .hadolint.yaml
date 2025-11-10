@@ -1,0 +1,3 @@
+ignored:
+  - DL3008  # Pin versions in apt get install
+  - DL3009  # Delete the apt-get lists after installing something

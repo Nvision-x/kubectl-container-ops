@@ -85,14 +85,6 @@ jobs:
       with:
         dockerfile: Dockerfile
         failure-threshold: warning
-        config: |
-          ignored:
-            - DL3008
-            - DL3009
-          trusted-registries:
-            - docker.io
-            - ghcr.io
-            - registry-1.docker.io
 
     - name: Lint shell scripts
       run: |
