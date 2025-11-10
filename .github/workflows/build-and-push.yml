@@ -50,6 +50,9 @@ jobs:
   validate:
     name: Code Quality & Linting
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     timeout-minutes: 10
     outputs:
       dockerfile-changed: ${{ steps.changes.outputs.dockerfile }}
