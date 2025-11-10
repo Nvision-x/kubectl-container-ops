@@ -1,5 +1,12 @@
 name: Build and Push kubectl Container
 
+# Grant necessary permissions for the workflow
+permissions:
+  contents: read
+  pull-requests: read
+  packages: write
+  actions: read
+
 on:
   push:
     branches: [ main ]
