@@ -126,11 +126,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Check Code Security requirements
+    - name: Security scanning info
       run: |
-        echo "ℹ️  Security scanning will run but SARIF upload requires Code Security to be enabled"
-        echo "📖 To enable: Repository Settings > Security & analysis > Code scanning"
-        echo "🔧 Workflow will continue even if SARIF upload fails"
+        echo "🔍 Running Trivy security scans (filesystem and secrets)"
+        echo "� Results will be displayed in workflow logs"
+        echo "ℹ️  SARIF upload is disabled - scans run for visibility only"
 
     - name: Run Trivy vulnerability scanner (filesystem)
       id: trivy-fs
@@ -138,17 +138,8 @@ jobs:
       with:
         scan-type: 'fs'
         scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-fs-results.sarif'
+        format: 'table'
         severity: 'CRITICAL,HIGH,MEDIUM'
-      continue-on-error: true
-
-    - name: Upload Trivy filesystem scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('trivy-fs-results.sarif') != ''
-      with:
-        sarif_file: 'trivy-fs-results.sarif'
-        category: 'trivy-filesystem'
       continue-on-error: true
 
     - name: Run Trivy secret scanner
@@ -158,16 +149,7 @@ jobs:
         scan-type: 'fs'
         scan-ref: '.'
         scanners: 'secret'
-        format: 'sarif'
-        output: 'trivy-secret-results.sarif'
-      continue-on-error: true
-
-    - name: Upload Trivy secret scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('trivy-secret-results.sarif') != ''
-      with:
-        sarif_file: 'trivy-secret-results.sarif'
-        category: 'trivy-secrets'
+        format: 'table'
       continue-on-error: true
 
     - name: Check for security issues in scripts
