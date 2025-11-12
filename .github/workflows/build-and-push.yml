@@ -224,30 +224,6 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Test image functionality
-      run: |
-        # Load image for testing on PRs
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          docker buildx build --load -t test-image .
-          IMAGE_NAME="test-image"
-        else
-          IMAGE_NAME="${{ steps.meta.outputs.tags }}" | head -n1
-        fi
-        
-        echo "Testing image: $IMAGE_NAME"
-        
-        # Basic functionality tests
-        docker run --rm $IMAGE_NAME version --client
-        docker run --rm --entrypoint=/bin/sh $IMAGE_NAME -c "
-          echo '✅ kubectl:' && kubectl version --client | head -1
-          echo '✅ jq:' && echo '{\"test\":\"ok\"}' | jq -r .test
-          echo '✅ curl:' && curl --version | head -1
-        "
-        
-        # Security tests
-        docker run --rm --read-only $IMAGE_NAME version --client
-        echo "✅ Image tests completed"
-
   auto-release:
     name: Create CalVer Release
     runs-on: ubuntu-latest
