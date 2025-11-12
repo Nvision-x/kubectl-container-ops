@@ -10,9 +10,12 @@ ARG BUILDPLATFORM
 # Metadata for the installer stage
 LABEL stage=installer
 
+# Set shell options for proper error handling
+SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
+
 # Install dependencies for downloading kubectl (minimal set)
 RUN apk add --no-cache --virtual .download-deps \
-    curl=~8 \
+    curl \
     ca-certificates
 
 # Download and verify kubectl binary
@@ -54,31 +57,28 @@ LABEL org.opencontainers.image.title="kubectl" \
       org.opencontainers.image.licenses="MIT" \
       maintainer="kubectl-container-ops"
 
-# Install runtime dependencies with specific versions for reproducibility
-RUN apk add --no-cache \
-    bash=~5.2 \
-    curl=~8 \
-    git=~2.43 \
-    jq=~1.7 \
-    ca-certificates \
-    # Security: Remove package manager cache and temporary files
-    && rm -rf /var/cache/apk/* \
-    && rm -rf /tmp/*
-
-# Install yq with version pinning for reproducibility
+# Install runtime dependencies and yq in single layer for better caching
 RUN set -eux; \
+    # Install system packages
+    apk add --no-cache \
+        bash \
+        curl \
+        git \
+        jq \
+        ca-certificates; \
+    # Install yq in same layer to optimize build time
     YQ_VERSION="v4.40.5"; \
     YQ_ARCH=$(uname -m); \
     case ${YQ_ARCH} in \
         x86_64) YQ_ARCH=amd64 ;; \
         aarch64) YQ_ARCH=arm64 ;; \
     esac; \
-    # Download yq binary from official releases \
     curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}" \
          -o /usr/local/bin/yq; \
     chmod +x /usr/local/bin/yq; \
-    # Verify installation works \
-    yq --version
+    yq --version; \
+    # Security: Remove package manager cache and temporary files
+    rm -rf /var/cache/apk/* /tmp/*
 
 # Create application directory structure
 RUN mkdir -p /opt/kubectl/bin \
@@ -120,7 +120,7 @@ ENV PATH="/opt/kubectl/bin:/opt/common/bin:$PATH" \
     APP_NAME="kubectl"
 
 # Security: Remove unnecessary setuid/setgid binaries
-RUN find / -type f -perm +6000 -exec ls -ld {} \; 2>/dev/null | grep -v '/proc' || true
+RUN find / -type f -perm +6000 -not -path '/proc/*' -exec ls -ld {} + 2>/dev/null || true
 
 # Security: Remove shell history and temporary files
 RUN rm -rf /tmp/* /var/tmp/* /root/.bash_history 2>/dev/null || true
