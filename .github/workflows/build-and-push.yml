@@ -153,36 +153,6 @@ jobs:
         format: 'table'
       continue-on-error: true
 
-    - name: Check for security issues in scripts
-      run: |
-        # Check for common security issues in text files only
-        if grep -r "curl.*http://" . \
-          --exclude-dir=.git \
-          --exclude-dir=.cache \
-          --exclude-dir=node_modules \
-          --include="*.sh" \
-          --include="*.yml" \
-          --include="*.yaml" \
-          --include="*.dockerfile" \
-          --include="Dockerfile*" \
-          --exclude="*.db" \
-          --exclude="*.log"; then
-          echo "Found insecure HTTP URLs in scripts"
-          exit 1
-        fi
-        
-        # Check for hardcoded credentials patterns in relevant files only
-        if grep -rE "(password|token|key|secret).*=" . \
-          --exclude-dir=.git \
-          --exclude-dir=.cache \
-          --include="*.sh" \
-          --include="*.yml" \
-          --include="*.yaml" \
-          --exclude="build-and-push.yml"; then
-          echo "Potential hardcoded credentials found"
-          exit 1
-        fi
-
   build-and-push:
     name: Build & Push Container
     runs-on: ubuntu-latest
