@@ -5,6 +5,7 @@ IMAGE_TAG ?= latest
 REGISTRY ?= 
 KUBECTL_VERSION ?= v1.34.1
 PLATFORM ?= linux/amd64
+MULTIARCH_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Full image name
 FULL_IMAGE_NAME = $(if $(REGISTRY),$(REGISTRY)/)$(IMAGE_NAME):$(IMAGE_TAG)
@@ -27,17 +28,22 @@ help: ## Show this help message
 	@echo "  REGISTRY=$(REGISTRY)"
 	@echo "  KUBECTL_VERSION=$(KUBECTL_VERSION)"
 	@echo "  PLATFORM=$(PLATFORM)"
+	@echo "  MULTIARCH_PLATFORMS=$(MULTIARCH_PLATFORMS)"
 
 # CalVer helpers
 .PHONY: calver
 calver: ## Generate CalVer tag (YYYY.MM.DD-BUILD)
-	@CALVER_TAG="$$(date +%Y.%m.%d)-$${BUILD_NUMBER:-1}" && \
+	@TODAY="$$(date +%Y.%m.%d)" && \
+	BUILD_NUMBER=$${BUILD_NUMBER:-1} && \
+	CALVER_TAG="$$TODAY-$$BUILD_NUMBER" && \
 	echo "Generated CalVer: v$$CALVER_TAG" && \
 	echo "$$CALVER_TAG"
 
 .PHONY: build-calver
 build-calver: ## Build with CalVer tag
-	@CALVER_TAG="$$(date +%Y.%m.%d)-$${BUILD_NUMBER:-1}" && \
+	@TODAY="$$(date +%Y.%m.%d)" && \
+	BUILD_NUMBER=$${BUILD_NUMBER:-1} && \
+	CALVER_TAG="$$TODAY-$$BUILD_NUMBER" && \
 	$(MAKE) build IMAGE_TAG="$$CALVER_TAG" && \
 	$(MAKE) build IMAGE_TAG="latest"
 
@@ -74,6 +80,26 @@ buildx: ## Build multi-platform image using buildx
 		--tag $(FULL_IMAGE_NAME) \
 		--platform $(PLATFORM) \
 		--push \
+		.
+
+.PHONY: build-multiarch
+build-multiarch: ## Build for multiple architectures (amd64,arm64)
+	@echo "Building multi-architecture $(FULL_IMAGE_NAME)..."
+	docker buildx build \
+		--build-arg KUBECTL_VERSION=$(KUBECTL_VERSION) \
+		--tag $(FULL_IMAGE_NAME) \
+		--platform $(MULTIARCH_PLATFORMS) \
+		--push \
+		.
+
+.PHONY: build-multiarch-load
+build-multiarch-load: ## Build multi-arch and load for testing (current platform only)
+	@echo "Building and loading $(FULL_IMAGE_NAME) for current platform..."
+	docker buildx build \
+		--build-arg KUBECTL_VERSION=$(KUBECTL_VERSION) \
+		--tag $(FULL_IMAGE_NAME) \
+		--platform $(shell docker version --format '{{.Client.Os}}/{{.Client.Arch}}') \
+		--load \
 		.
 
 # Run targets

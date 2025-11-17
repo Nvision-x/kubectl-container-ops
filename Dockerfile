@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Multi-stage build for kubectl container
-FROM alpine:3.19 AS kubectl-installer
+FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5 AS kubectl-installer
 
 # Build arguments with defaults and descriptions
 ARG KUBECTL_VERSION=v1.34.1
@@ -14,6 +14,8 @@ LABEL stage=installer
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 # Install dependencies for downloading kubectl (minimal set)
+# Switch to root temporarily to install packages
+USER root
 RUN apk add --no-cache --virtual .download-deps \
     curl \
     ca-certificates
@@ -38,7 +40,7 @@ RUN set -eux; \
     /opt/kubectl/bin/kubectl version --client
 
 # Final stage - minimal runtime image
-FROM alpine:3.19
+FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5
 
 # Build arguments (must be redeclared after FROM)
 ARG KUBECTL_VERSION=v1.34.1
@@ -58,6 +60,8 @@ LABEL org.opencontainers.image.title="kubectl" \
       maintainer="kubectl-container-ops"
 
 # Install runtime dependencies and yq in single layer for better caching
+# Switch to root temporarily to install packages
+USER root
 RUN set -eux; \
     # Install system packages
     apk add --no-cache \
@@ -92,15 +96,12 @@ COPY --from=kubectl-installer /opt/kubectl/bin/kubectl /opt/kubectl/bin/kubectl
 # Create symbolic link for easy access
 RUN ln -sf /opt/kubectl/bin/kubectl /usr/local/bin/kubectl
 
-# Create non-root user with restricted permissions (Security best practice)
-RUN addgroup -g 1001 -S kubectl && \
-    adduser -D -u 1001 -G kubectl -S -s /sbin/nologin kubectl
-
-# Create directories with proper permissions (Principle of least privilege)
-RUN mkdir -p /.kube /home/kubectl/.kube /home/kubectl/.cache && \
-    # Set proper ownership and permissions \
-    chown -R 1001:1001 /home/kubectl /.kube && \
-    chmod -R 750 /home/kubectl && \
+# Use existing appuser from base image instead of creating new user
+# Create directories with proper permissions for appuser (uid=1000)
+RUN mkdir -p /.kube /home/appuser/.kube /home/appuser/.cache && \
+    # Set proper ownership and permissions for appuser \
+    chown -R 1000:1000 /home/appuser /.kube && \
+    chmod -R 750 /home/appuser && \
     chmod 700 /.kube
 
 # Copy entrypoint script with proper permissions
@@ -126,7 +127,8 @@ RUN find / -type f -perm +6000 -not -path '/proc/*' -exec ls -ld {} + 2>/dev/nul
 RUN rm -rf /tmp/* /var/tmp/* /root/.bash_history 2>/dev/null || true
 
 # Switch to non-root user (Security best practice)
-USER 1001:1001
+# Switch back to non-root user (appuser from base image)
+USER 1000:1000
 WORKDIR /
 
 # Set environment variables with security considerations
