@@ -212,8 +212,8 @@ jobs:
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        username: ben-nvisionx
+        password: ${{ secrets.DEPLOYMENT_PAT }}
 
     - name: Extract metadata
       id: meta
