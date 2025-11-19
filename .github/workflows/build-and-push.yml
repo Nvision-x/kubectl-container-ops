@@ -238,7 +238,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        platforms: ${{ env.PLATFORMS }}
+        platforms: linux/amd64
         push: false
         load: true
         tags: ${{ steps.meta.outputs.tags }}
@@ -277,7 +277,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
-      
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
