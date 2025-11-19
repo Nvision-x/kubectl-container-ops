@@ -211,8 +211,21 @@ jobs:
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        username: ben-nvisionx
+        password: ${{ secrets.DEPLOYMENT_PAT }}
+
+    - name: Verify Docker authentication
+      run: |
+        echo "Verifying Docker authentication..."
+        docker system info | grep -E 'Registry|Username' || true
+        echo "Testing registry access..."
+        docker manifest inspect ghcr.io/nvision-x/alpine-base-dockerfile:latest > /dev/null 2>&1 && echo "✓ Can access private registry" || echo "✗ Cannot access private registry"
+
+    - name: Pre-pull base image
+      run: |
+        echo "Pre-pulling base image to ensure access..."
+        docker pull ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5
+        echo "✓ Base image pulled successfully"
 
     - name: Extract metadata
       id: meta
@@ -247,6 +260,14 @@ jobs:
           KUBECTL_VERSION=${{ env.KUBECTL_VERSION }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - name: Logout from previous registry session
+      if: github.event_name != 'pull_request'
+      run: docker logout ${{ env.REGISTRY }}
+
+    - name: Logout from previous registry session
+      if: github.event_name != 'pull_request'
+      run: docker logout ${{ env.REGISTRY }}
 
     - name: Log in to Container Registry for Push
       if: github.event_name != 'pull_request'
