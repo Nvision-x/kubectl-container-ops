@@ -77,9 +77,6 @@ jobs:
             - 'entrypoint.sh'
           makefile:
             - 'Makefile'
-          workflows:
-            - '.github/workflows/**'
-
     - name: Lint Dockerfile
       uses: hadolint/hadolint-action@v3.1.0
       with:
