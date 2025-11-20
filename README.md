@@ -63,6 +63,12 @@ make run
 # Run specific kubectl command
 make run-cmd CMD="kubectl get pods"
 
+# Use the published container directly
+docker run --rm -v ~/.kube/config:/.kube/config:ro ghcr.io/nvision-x/kubectl-container-ops:latest get pods
+
+# Use specific version
+docker run --rm -v ~/.kube/config:/.kube/config:ro ghcr.io/nvision-x/kubectl-container-ops:2025.11.20-1 version --client
+
 # Just test the container
 make test-run
 ```

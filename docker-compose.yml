@@ -2,11 +2,13 @@ version: '3.8'
 
 services:
   kubectl-ops:
-    build:
-      context: .
-      args:
-        KUBECTL_VERSION: v1.34.1
-    image: kubectl-ops:latest
+    # Use the published image instead of building locally
+    image: ghcr.io/nvision-x/kubectl-container-ops:latest
+    # Uncomment below to build locally instead
+    # build:
+    #   context: .
+    #   args:
+    #     KUBECTL_VERSION: v1.34.1
     container_name: kubectl-ops-dev
     volumes:
       # Mount your kubeconfig (adjust path as needed)
@@ -24,7 +26,7 @@ services:
 
   # Example: kubectl with environment variables instead of mounted config
   kubectl-ops-env:
-    image: kubectl-ops:latest
+    image: ghcr.io/nvision-x/kubectl-container-ops:latest
     container_name: kubectl-ops-env
     environment:
       - KUBE_SERVER=https://your-cluster-api.example.com
@@ -36,7 +38,7 @@ services:
 
   # Example: Run a specific kubectl command
   kubectl-task:
-    image: kubectl-ops:latest
+    image: ghcr.io/nvision-x/kubectl-container-ops:latest
     container_name: kubectl-task
     volumes:
       - ~/.kube/config:/.kube/config:ro
