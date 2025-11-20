@@ -64,11 +64,10 @@ jobs:
         fetch-depth: 0
 
     - name: Check for relevant changes
-      uses: dorny/paths-filter@v3
+      uses: dorny/paths-filter@v2
       id: changes
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        base: ${{ github.event.repository.default_branch }}
         filters: |
           dockerfile:
             - 'Dockerfile*'
@@ -77,6 +76,9 @@ jobs:
             - 'entrypoint.sh'
           makefile:
             - 'Makefile'
+          workflows:
+            - '.github/workflows/**'
+
     - name: Lint Dockerfile
       uses: hadolint/hadolint-action@v3.1.0
       with:
@@ -209,7 +211,7 @@ jobs:
       with:
         registry: ${{ env.REGISTRY }}
         username: ben-nvisionx
-        password: ${{ secrets.GH_REGISTRY_RO_PAT }}
+        password: ${{ secrets.DEPLOYMENT_PAT }}
 
     - name: Extract metadata
       id: meta
@@ -253,25 +255,19 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Tag and push images
+    - name: Push image
       if: github.event_name != 'pull_request'
-      run: |
-        echo "Pushing images with GitHub token..."
-        
-        # Get the image ID from the built image
-        IMAGE_ID=$(docker images --format "table {{.Repository}}:{{.Tag}}\t{{.ID}}" | grep "ghcr.io/nvision-x/kubectl-container-ops" | head -1 | awk '{print $2}')
-        echo "Found built image ID: $IMAGE_ID"
-        
-        # Push each tag
-        echo "${{ steps.meta.outputs.tags }}" | while read -r tag; do
-          if [ -n "$tag" ]; then
-            echo "Tagging and pushing: $tag"
-            docker tag $IMAGE_ID $tag
-            docker push $tag
-          fi
-        done
-        
-        echo "✅ All images pushed successfully"
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: ${{ env.PLATFORMS }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          KUBECTL_VERSION=${{ env.KUBECTL_VERSION }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
   auto-release:
     name: Create CalVer Release
