@@ -212,7 +212,7 @@ jobs:
       with:
         registry: ${{ env.REGISTRY }}
         username: ben-nvisionx
-        password: ${{ secrets.DEPLOYMENT_PAT }}
+        password: ${{ secrets.GH_REGISTRY_RO_PAT }}
 
     - name: Extract metadata
       id: meta
