@@ -238,7 +238,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        platforms: ${{ env.PLATFORMS }}
+        platforms: linux/amd64
         push: false
         load: true
         tags: ${{ steps.meta.outputs.tags }}
@@ -247,6 +247,14 @@ jobs:
           KUBECTL_VERSION=${{ env.KUBECTL_VERSION }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+    - name: Logout from previous registry session
+      if: github.event_name != 'pull_request'
+      run: docker logout ${{ env.REGISTRY }}
+
+    - name: Logout from previous registry session
+      if: github.event_name != 'pull_request'
+      run: docker logout ${{ env.REGISTRY }}
 
     - name: Log in to Container Registry for Push
       if: github.event_name != 'pull_request'
@@ -277,7 +285,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
-      
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
