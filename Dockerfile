@@ -3,7 +3,7 @@
 FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5 AS kubectl-installer
 
 # Build arguments with defaults and descriptions
-ARG KUBECTL_VERSION=v1.34.1
+ARG KUBECTL_VERSION=v1.34.12
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
@@ -43,7 +43,7 @@ RUN set -eux; \
 FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5
 
 # Build arguments (must be redeclared after FROM)
-ARG KUBECTL_VERSION=v1.34.1
+ARG KUBECTL_VERSION=v1.34.12
 ARG BUILD_DATE
 ARG VCS_REF
 
@@ -71,7 +71,7 @@ RUN set -eux; \
         jq \
         ca-certificates; \
     # Install yq in same layer to optimize build time
-    YQ_VERSION="v4.40.5"; \
+    YQ_VERSION="v4.54.1"; \
     YQ_ARCH=$(uname -m); \
     case ${YQ_ARCH} in \
         x86_64) YQ_ARCH=amd64 ;; \
