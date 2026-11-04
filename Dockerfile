@@ -64,7 +64,7 @@ LABEL org.opencontainers.image.title="kubectl" \
 USER root
 RUN set -eux; \
     # Install system packages
-    apk add --no-cache \
+    apk upgrade --no-cache && apk add --no-cache \
         bash \
         curl \
         git \
