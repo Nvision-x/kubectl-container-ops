@@ -3,7 +3,7 @@
 FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5 AS kubectl-installer
 
 # Build arguments with defaults and descriptions
-ARG KUBECTL_VERSION=v1.34.12
+ARG KUBECTL_VERSION=v1.34.13
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
@@ -43,7 +43,7 @@ RUN set -eux; \
 FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5
 
 # Build arguments (must be redeclared after FROM)
-ARG KUBECTL_VERSION=v1.34.12
+ARG KUBECTL_VERSION=v1.34.13
 ARG BUILD_DATE
 ARG VCS_REF
 
@@ -64,7 +64,7 @@ LABEL org.opencontainers.image.title="kubectl" \
 USER root
 RUN set -eux; \
     # Install system packages
-    apk add --no-cache \
+    apk upgrade --no-cache && apk add --no-cache \
         bash \
         curl \
         git \
