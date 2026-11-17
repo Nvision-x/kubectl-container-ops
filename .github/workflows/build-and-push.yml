@@ -28,7 +28,7 @@ on:
       kubectl_version:
         description: 'kubectl version to build'
         required: false
-        default: 'v1.34.1'
+        default: 'v1.34.13'
       enable_security_scan:
         description: 'Enable security scanning'
         required: false
@@ -43,7 +43,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  KUBECTL_VERSION: v1.34.1
+  KUBECTL_VERSION: v1.34.13
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
