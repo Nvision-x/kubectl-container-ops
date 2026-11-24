@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Multi-stage build for kubectl container
-FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5 AS kubectl-installer
+FROM ghcr.io/nvision-x/go-runtime-base-image:3.24 AS kubectl-installer
 
 # Build arguments with defaults and descriptions
 ARG KUBECTL_VERSION=v1.34.13
@@ -40,7 +40,7 @@ RUN set -eux; \
     /opt/kubectl/bin/kubectl version --client
 
 # Final stage - minimal runtime image
-FROM ghcr.io/nvision-x/alpine-base-dockerfile@sha256:e1c87245f926bdc2b2c694f0771f561ed07af4ded7e1037a7af8d8a897d9c9d5
+FROM ghcr.io/nvision-x/go-runtime-base-image:3.24
 
 # Build arguments (must be redeclared after FROM)
 ARG KUBECTL_VERSION=v1.34.13
